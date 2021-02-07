@@ -10,8 +10,8 @@ from time import sleep
 
 bot_name = "FH-GoalieBot"
 bot_pw = "XXXXXXXX"
-client_id = 'K1-26e2s1qxWJg'
-client_secret = 'eXPINy706R0cMgdVYiPV2m27tWqGRQ'
+client_id = 'XXXX'
+client_secret = 'XXXX'
 rows = []
 
 def calculate_overall_leader_index(number=10):
