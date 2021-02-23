@@ -1,4 +1,4 @@
-bot_name = 'FH-GoalieBot'
+bot_name = ''
 def get_current_threads(subreddit,limit=200):
     bot_threads = []
     threads = subreddit.hot(limit=limit)
