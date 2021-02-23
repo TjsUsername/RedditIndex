@@ -5,13 +5,14 @@ from pytz import timezone
 import praw
 import yaml
 from common import *
-from post_player_threads import *
+from post_player_discussions import *
 from time import sleep
-
-bot_name = "FH-GoalieBot"
-bot_pw = "XXXXXXXX"
-client_id = 'XXXX'
-client_secret = 'XXXX'
+import requests
+import pytz
+bot_name = ""
+bot_pw = ""
+client_id = ''
+client_secret = ''
 rows = []
 
 def calculate_overall_leader_index(number=10):
@@ -123,8 +124,11 @@ def create_unanswered_index(thread, help_count_all, length=20, text=True, show_p
     return ""
 
 
-def post_index_thread(index_body):
+def post_index_thread(index_body, subreddit, thread_zone):
     # POST INDEX THREAD
+    this_date = datetime.datetime.now().astimezone(timezone('US/Central'))
+    current_date = this_date.strftime("%m/%d/%Y")
+    current_day = this_date.strftime('%a')
     index_title = 'Fantasy Hockey Megathread: [Index] - %s %s, %s' % (current_day, thread_zone, current_date)
     thread_found = False
     current_threads = get_current_threads(subreddit)
@@ -146,7 +150,7 @@ def post_index_thread(index_body):
         submitted_thread.mod.lock()
 
 
-def calculate_index_length(index_body, news_link, overall_help_count):
+def calculate_index_length(index_body, news_link, found_threads, subreddit, index):
     index_length = 0
     index_num = 20
 
@@ -156,9 +160,9 @@ def calculate_index_length(index_body, news_link, overall_help_count):
         # Edit all the threads
         threads_for_index = []
         for thread, thread_body, thread_config in found_threads:
-            # index = create_unanswered_index(thread, overall_help_count, length=index_num, text=False,
+            #index = create_unanswered_index(thread, overall_help_count, length=index_num, text=False,
             #                                 show_percents=config['show_percents'])
-            threads_for_index.append((thread, index))
+            threads_for_index.append((thread))
 
         index_body = ""
         index_body += get_wiki(subreddit, 'index')
@@ -167,8 +171,8 @@ def calculate_index_length(index_body, news_link, overall_help_count):
         index_body += calculate_overall_leader_index()
         for thread in threads_for_index:
             index_body += "\n --- \n\n"
-            index_body += "#[%s](%s)" % (thread[0].title, thread[0].permalink)
-            index_body += thread[1]
+            index_body += "#[%s](%s)" % (thread.title, thread.permalink)
+            #index_body += str(thread)
         index_length = len(index_body)
         print(index_length)
         index_num -= 1
@@ -197,6 +201,17 @@ def get_overall_help_count(found_threads):
                         pass
     return help_count_all
 
+def post_todays_games(subreddit):
+    todays_date = datetime.datetime.now()
+    table = "Talk about anything related to the games occurring today!\n# GAME SCHEDULE\n|Time(EST/PST)|Away|Home|\n|:-|:-|:-|"
+    response = requests.get("https://statsapi.web.nhl.com/api/v1/schedule?date={}-{}-{}".format(todays_date.year, todays_date.strftime("%m"), todays_date.day)).json()
+    for game in response.get('dates')[-1].get('games'):
+        response = requests.get("https://statsapi.web.nhl.com"+game['link']).json()
+        date_time = response['gameData']['datetime']['dateTime']
+        utc_time = pytz.utc.localize(datetime.datetime.strptime(date_time, '%Y-%m-%dT%H:%M:%SZ'))
+        utc_time.astimezone(pytz.timezone('America/Los_Angeles'))
+        table = table + '\n|{}/{}|{}|{}|'.format(utc_time.astimezone(pytz.timezone('US/Eastern')).time().strftime("%I:%M %p"),utc_time.astimezone(pytz.timezone('US/Pacific')).time().strftime("%I:%M %p"),response['gameData']['teams']['away']['name'],response['gameData']['teams']['home']['name'])
+    subreddit.submit("Games Discussion: Official Thread - {}".format(datetime.datetime.now().strftime("%B %d, %Y")),table)
 
 def get_thread_zone(config, hour):
     if config['posts_per_day'] == 3:
@@ -216,10 +231,15 @@ def get_thread_zone(config, hour):
 
     return thread_zone
 
-while 1:
+def main():
     this_date = datetime.datetime.now().astimezone(timezone('US/Central'))
 
     hour = int(this_date.strftime("%H"))
+
+     # Not creating a new thread until 6am
+    if hour < 6:
+        time.sleep(200)
+        return
 
     r = praw.Reddit(client_id=client_id,
                     client_secret=client_secret,
@@ -227,9 +247,7 @@ while 1:
                     user_agent='FantasyBot',
                     username=bot_name)
 
-    # Not creating a new thread until 6am
-    if hour < 6:
-        this_date = this_date - datetime.timedelta(days=1)
+    r.validate_on_submit = True
 
     print(this_date)
 
@@ -238,14 +256,13 @@ while 1:
     current_day_full = this_date.strftime('%A').lower()
     hour = int(this_date.strftime("%H"))
 
-    config = yaml.load(open("%s.yaml" % sys.argv[1]).read())
+    config = yaml.load(open("fantasyhockey.yaml").read())
     thread_zone = get_thread_zone(config, hour)
     print("Posting to Sub: %s" % config['subreddit'])
     subreddit = r.subreddit(config['subreddit'])
     current_threads = get_current_threads(subreddit, limit=1000)
     found_threads = []
     remove_yesterday_stickies(subreddit, current_date, thread_zone)
-
     # Find all Threads, submit new one if there is no thread.
 
     thread_configs = sorted(config['threads'], key=lambda k: k['title'])
@@ -277,7 +294,7 @@ while 1:
 
         if not thread_found:
             print('SUBMITTING THREAD', thread_title)
-            submitted_thread = subreddit.submit(thread_title, selftext=wiki)
+            submitted_thread = subreddit.submit(thread_title, selftext=wiki, )
             submitted_thread.mod.suggested_sort(sort='new')
             submitted_thread.mod.flair(text=thread_config['flair_text'], css_class=thread_config['flair_css'])
             if 'sticky' in thread_config and thread_config['sticky']:
@@ -287,6 +304,14 @@ while 1:
 
     overall_help_count = get_overall_help_count(found_threads)
 
+    #check if the list of today's games was posted
+    games_posted = False
+    for thread in current_threads:
+        if str(thread.title) == "Games Discussion: Official Thread - {}".format(this_date.strftime("%B %d, %Y")):
+            games_posted = True
+    #if not, post it
+    if not games_posted:
+        post_todays_games(subreddit)
     # EDIT THE POSTS
     for thread, thread_body, thread_config in found_threads:
         if 'no_table' in thread_config:
@@ -305,10 +330,13 @@ while 1:
             news_link = post_news_and_discussions(r, subreddit, current_threads, current_day, current_date)
         else:
             news_link = False
-        index_body = calculate_index_length(index_body, news_link, overall_help_count)
-        post_index_thread(index_body)
+        index_body = calculate_index_length(index_body, news_link, found_threads, subreddit, index)
+        post_index_thread(index_body, subreddit, thread_zone=thread_zone)
 
         print("------------------------------------------------------------------")
         print("----------------------- Sleeping for 15m -------------------------")
         print("------------------------------------------------------------------")
         sleep(15 * 60) # sleeping for 15 m
+while True:
+    main()
+
