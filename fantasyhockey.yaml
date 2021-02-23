@@ -1,9 +1,4 @@
 threads:
-- title: "Today's Games - Daily Thread"
-  flair_text: "[Games]"
-  flair_css: "games"
-  wiki: 'games'
-  games: True
 - title: "Goalie Starts: Official Thread"
   flair_text: "[Goalies]"
   flair_css: "goalies"
@@ -30,3 +25,4 @@ posts_per_day: 1
 subreddit: "fantasyhockey"
 show_percents: True
 wdis_replace: False
+
